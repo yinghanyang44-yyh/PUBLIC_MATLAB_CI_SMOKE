@@ -51,8 +51,6 @@ jobs:
       issues: write
     outputs:
       sha: ${{ steps.authorize.outputs.sha }}
-    env:
-      MATLAB_CI_ARTIFACT_DIR: ${{ runner.temp }}/public-matlab-ci-smoke
     steps:
       - name: Check out the immutable event default-branch commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -64,6 +62,7 @@ jobs:
         id: authorize
         timeout-minutes: 3
         env:
+          MATLAB_CI_ARTIFACT_DIR: ${{ runner.temp }}/public-matlab-ci-smoke
           GH_TOKEN: ${{ github.token }}
         run: python3 -I ci/authorization/authorize_smoke.py
       - name: Retain authorization or rejection evidence
@@ -87,8 +86,6 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    env:
-      MATLAB_CI_ARTIFACT_DIR: ${{ runner.temp }}/public-matlab-ci-smoke
     steps:
       - name: Restore the confirmed authorization evidence
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -106,12 +103,15 @@ jobs:
       - name: Recheck live public repository and owner authorization
         timeout-minutes: 2
         env:
+          MATLAB_CI_ARTIFACT_DIR: ${{ runner.temp }}/public-matlab-ci-smoke
           GH_TOKEN: ${{ github.token }}
         run: python -I ci/authorization/authorize_smoke.py --verify-execution
 
       - name: Inspect Windows, Visual Studio, disks and headroom
         id: platform
         timeout-minutes: 3
+        env:
+          MATLAB_CI_ARTIFACT_DIR: ${{ runner.temp }}/public-matlab-ci-smoke
         run: ./ci/matlab/runner_preflight.ps1 -Stage before-install -MinimumFreeGiB 10 -RequirePlatform
 
       - name: Install MATLAB R2025a and Simulink without caching
@@ -125,11 +125,15 @@ jobs:
 
       - name: Inspect remaining headroom before compilation
         timeout-minutes: 2
+        env:
+          MATLAB_CI_ARTIFACT_DIR: ${{ runner.temp }}/public-matlab-ci-smoke
         run: ./ci/matlab/runner_preflight.ps1 -Stage after-install -MinimumFreeGiB 2
 
       - name: Execute all seven gates once
         id: matlab
         timeout-minutes: 15
+        env:
+          MATLAB_CI_ARTIFACT_DIR: ${{ runner.temp }}/public-matlab-ci-smoke
         uses: matlab-actions/run-command@bfa857648f4895aa98a446fe41c85e0788421ed5 # v3.3
         with:
           command: addpath(fullfile(pwd,'ci','matlab')); run_public_smoke
@@ -140,6 +144,7 @@ jobs:
         if: always()
         timeout-minutes: 2
         env:
+          MATLAB_CI_ARTIFACT_DIR: ${{ runner.temp }}/public-matlab-ci-smoke
           AUTHORIZATION_OUTCOME: ${{ needs.authorize.result }}
           PLATFORM_OUTCOME: ${{ steps.platform.outcome }}
           SETUP_OUTCOME: ${{ steps.setup.outcome }}

@@ -1,6 +1,7 @@
 """Public generic example policy checks. No MATLAB or network execution."""
 from pathlib import Path
 import shutil
+import re
 import subprocess
 import tempfile
 import unittest
@@ -53,6 +54,21 @@ class PublicSmokeTests(unittest.TestCase):
         self.assertIn("'reset',double(mod(n,17)==0 & n>0)",source)
         self.assertIn("'rmse'",source)
         self.assertIn("'event_mismatches'",source)
+
+    def test_github_context_availability(self):
+        # GitHub rejects runner context in job.env before allocating any jobs.
+        # It is supported in steps.env; YAML parsing alone does not catch this.
+        workflow = yaml.load((ROOT/'.github/workflows/public-matlab-ci-smoke.yml').read_text(), Loader=yaml.BaseLoader)
+        allowed = {'github','needs','strategy','matrix','vars','secrets','inputs'}
+        for name, job in workflow['jobs'].items():
+            for value in job.get('env', {}).values():
+                for expression in re.findall(r'\$\{\{(.*?)\}\}', value, re.S):
+                    contexts = set(re.findall(r'\b([a-zA-Z_]\w*)\.', expression))
+                    self.assertLessEqual(contexts, allowed, name)
+            for step in job['steps']:
+                if 'run' in step or step.get('id') == 'matlab':
+                    self.assertEqual(step.get('env', {}).get('MATLAB_CI_ARTIFACT_DIR'),
+                                     '${{ runner.temp }}/public-matlab-ci-smoke', step['name'])
 
     @unittest.skipUnless(shutil.which('g++'),'g++ unavailable')
     def test_portable_core(self):
