@@ -1,0 +1,12 @@
+# Generated CI output is never source, and no license material belongs here.
+/ci/matlab/artifacts/
+/ci/matlab/build/
+/tests/matlab/.build/
+*.mexw64
+*.mexa64
+*.slxc
+slprj/
+*.lic
+license.dat
+
+__pycache__/

@@ -1,0 +1,172 @@
+name: PUBLIC_MATLAB_CI_SMOKE
+run-name: Public MATLAB smoke owner dispatch • ${{ github.sha }}
+
+# Deliberate owner-only triggers. No push, PR, schedule, or automatic retry.
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type RUN_PUBLIC_MATLAB_CI_SMOKE to authorize one public example run'
+        required: true
+        type: string
+      expected_commit:
+        description: 'Full 40-character SHA reviewed on main'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: >-
+    ${{ github.repository == 'yinghanyang44-yyh/PUBLIC_MATLAB_CI_SMOKE' &&
+        github.event.repository.private == false &&
+        github.actor == github.repository_owner &&
+        github.triggering_actor == github.repository_owner && github.run_attempt == 1 &&
+        (github.event_name == 'workflow_dispatch' ||
+         (github.event_name == 'issue_comment' && github.event.action == 'created' &&
+          !github.event.issue.pull_request && startsWith(github.event.comment.body, '/matlab-smoke run '))) &&
+        'public-matlab-ci-smoke' || format('public-matlab-smoke-rejected-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    # Noncommands and nonowners do not allocate a runner or access a job token.
+    if: >-
+      github.repository == 'yinghanyang44-yyh/PUBLIC_MATLAB_CI_SMOKE' &&
+      github.event.repository.private == false &&
+      github.actor == github.repository_owner &&
+      github.triggering_actor == github.repository_owner &&
+      github.run_attempt == 1 &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'issue_comment' && github.event.action == 'created' &&
+        !github.event.issue.pull_request &&
+        startsWith(github.event.comment.body, '/matlab-smoke run ')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      sha: ${{ steps.authorize.outputs.sha }}
+    env:
+      MATLAB_CI_ARTIFACT_DIR: ${{ runner.temp }}/public-matlab-ci-smoke
+    steps:
+      - name: Check out the immutable event default-branch commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Validate owner command and claim an issue once
+        id: authorize
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -I ci/authorization/authorize_smoke.py
+      - name: Retain authorization or rejection evidence
+        if: always()
+        timeout-minutes: 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: public-matlab-smoke-authorization-${{ github.run_id }}
+          path: ${{ runner.temp }}/public-matlab-ci-smoke/
+          retention-days: 30
+          if-no-files-found: error
+          include-hidden-files: false
+
+  matlab-gates:
+    needs: authorize
+    if: needs.authorize.result == 'success' && github.run_attempt == 1
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      MATLAB_CI_ARTIFACT_DIR: ${{ runner.temp }}/public-matlab-ci-smoke
+    steps:
+      - name: Restore the confirmed authorization evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: public-matlab-smoke-authorization-${{ github.run_id }}
+          path: ${{ runner.temp }}/public-matlab-ci-smoke/
+
+      - name: Check out the reviewed immutable commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.authorize.outputs.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Recheck live public repository and owner authorization
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -I ci/authorization/authorize_smoke.py --verify-execution
+
+      - name: Inspect Windows, Visual Studio, disks and headroom
+        id: platform
+        timeout-minutes: 3
+        run: ./ci/matlab/runner_preflight.ps1 -Stage before-install -MinimumFreeGiB 10 -RequirePlatform
+
+      - name: Install MATLAB R2025a and Simulink without caching
+        id: setup
+        timeout-minutes: 30
+        uses: matlab-actions/setup-matlab@f9e43010f1ae678f7cfa0542fe2a4f60f7d1ad8d # v3.1
+        with:
+          release: R2025a
+          products: Simulink
+          cache: false
+
+      - name: Inspect remaining headroom before compilation
+        timeout-minutes: 2
+        run: ./ci/matlab/runner_preflight.ps1 -Stage after-install -MinimumFreeGiB 2
+
+      - name: Execute all seven gates once
+        id: matlab
+        timeout-minutes: 15
+        uses: matlab-actions/run-command@bfa857648f4895aa98a446fe41c85e0788421ed5 # v3.3
+        with:
+          command: addpath(fullfile(pwd,'ci','matlab')); run_public_smoke
+          startup-options: -noFigureWindows
+          generate-summary: false
+
+      - name: Retain final status and disk snapshot
+        if: always()
+        timeout-minutes: 2
+        env:
+          AUTHORIZATION_OUTCOME: ${{ needs.authorize.result }}
+          PLATFORM_OUTCOME: ${{ steps.platform.outcome }}
+          SETUP_OUTCOME: ${{ steps.setup.outcome }}
+          MATLAB_OUTCOME: ${{ steps.matlab.outcome }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force $env:MATLAB_CI_ARTIFACT_DIR | Out-Null
+          [ordered]@{
+            authorization = $env:AUTHORIZATION_OUTCOME; platform = $env:PLATFORM_OUTCOME
+            setup = $env:SETUP_OUTCOME
+            matlab = $env:MATLAB_OUTCOME
+          } | ConvertTo-Json | Set-Content "$env:MATLAB_CI_ARTIFACT_DIR/step-outcomes.json"
+          Get-PSDrive -PSProvider FileSystem | Select-Object Name,Root,Used,Free |
+            ConvertTo-Json -Depth 3 | Set-Content "$env:MATLAB_CI_ARTIFACT_DIR/disks-final.json"
+          if (Test-Path "$env:MATLAB_CI_ARTIFACT_DIR/gates.json") {
+            Get-Content "$env:MATLAB_CI_ARTIFACT_DIR/gates.json" -Raw | Add-Content $env:GITHUB_STEP_SUMMARY
+          } else {
+            'MATLAB gates did not produce a report. Inspect status.txt and step-outcomes.json; this is not a MATLAB PASS.' | Add-Content $env:GITHUB_STEP_SUMMARY
+          }
+
+      - name: Upload diagnostics on success or failure
+        if: always()
+        timeout-minutes: 3
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: public-matlab-smoke-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/public-matlab-ci-smoke/
+          retention-days: 30
+          if-no-files-found: error
+          include-hidden-files: false
