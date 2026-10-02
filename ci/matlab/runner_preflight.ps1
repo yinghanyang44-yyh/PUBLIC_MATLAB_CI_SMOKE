@@ -39,8 +39,8 @@ $snapshot = [ordered]@{
 $snapshot | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $artifactDir "runner-$Stage.json")
 $snapshot | ConvertTo-Json -Depth 6 | Write-Output
 if ($RequirePlatform) {
-    if ($os.Caption -notmatch 'Windows Server 2025') {
-        throw 'windows-latest has drifted from Windows Server 2025. Review compatibility; no automatic OS fallback.'
+    if ($os.Caption -notmatch 'Windows Server 2022') {
+        throw 'Expected Windows Server 2022 from the explicit windows-2022 label. Review compatibility; no automatic OS fallback.'
     }
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
     if (-not (Test-Path $vswhere)) { throw 'Visual Studio discovery tool was not found.' }

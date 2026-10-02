@@ -2,7 +2,7 @@
 
 A newly authored, generic public MATLAB/Simulink smoke example. It contains no imported models, research implementation, private parameters, private test vectors, or other project assets. Models are generated from these public source files at runtime.
 
-**Current validation:** local workflow-policy checks and portable C++ tests only. MATLAB, Simulink, MEX, Windows execution and GitHub artifact upload have not yet run. No MATLAB PASS is claimed.
+**Current validation:** local workflow-policy checks and portable C++ tests pass. A public run reached Windows preflight and stopped before MATLAB installation because the rolling image lacked VS2022. MATLAB, Simulink, MEX and all seven runtime gates remain untested. No MATLAB PASS is claimed.
 
 The repository `yinghanyang44-yyh/PUBLIC_MATLAB_CI_SMOKE` is verified public with default branch `main`. Its workflows become registered after these source files are published to that branch.
 
@@ -23,12 +23,20 @@ The [official MATLAB actions](https://github.com/matlab-actions/setup-matlab#lic
 
 ## Runtime policy
 
-- `windows-latest`, with an explicit runtime requirement for Windows Server 2025 and Visual Studio 2022 with x64 C/C++ tools
+- `windows-2022`, with an explicit runtime requirement for Windows Server 2022 and Visual Studio 2022 with x64 C/C++ tools
 - MATLAB R2025a (latest update), plus only Simulink; setup cache disabled
 - Setup action v3.1 commit `f9e43010f1ae678f7cfa0542fe2a4f60f7d1ad8d`; run-command v3.3 commit `bfa857648f4895aa98a446fe41c85e0788421ed5`
 - No silent platform/compiler fallback and no automatic retry
 - 60-minute job budget, 30-minute install limit, 15-minute execution limit
 - Before/after disk, temp, workspace, actual CPU/RAM/image snapshots; project safety thresholds of 10 GiB before install and 2 GiB afterward on relevant volumes. These thresholds are not vendor minimums or an installation-size guarantee
+
+### Why the Windows label is explicit
+
+On 2026-10-02, [public smoke run 36964586134](https://github.com/yinghanyang44-yyh/PUBLIC_MATLAB_CI_SMOKE/actions/runs/36964586134) reached Windows preflight on the rolling `windows-latest` label. Its actual image was `win25-vs2026`, version `20260925.250.1`; VS2022 discovery found no 17.x compiler. The guard correctly stopped before MATLAB installation. No MATLAB gate passed or failed in that run because none started.
+
+The replacement is the explicit `windows-2022` label, not a weakened compiler check. On 2026-10-02, the [official image inventory](https://github.com/actions/runner-images/blob/main/images/windows/Windows2022-Readme.md) listed Windows Server 2022 image `20260920.314.1`, Visual Studio Enterprise 2022 `17.14.37710.0`, and x64 C/C++ tools. GitHub's [supported runner labels](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) include `windows-2022` for public and private repositories. MathWorks lists Windows Server 2022 and VS2022 as supported for R2025a. The OS guard now requires Server 2022; the compiler guard still requires `[17.0,18.0)` and the exact MATLAB VS2022 configuration.
+
+A runner label does not freeze a specific image revision. Actual image, OS and compiler versions remain recorded and checked on every deliberate new run. There is no Linux switch, compiler substitution or retry of a consumed issue.
 
 ## Seven gates
 
@@ -65,7 +73,7 @@ This checks both deliberate trigger paths, owner/SHA/visibility/attempt guards, 
 - [Setup MATLAB](https://github.com/matlab-actions/setup-matlab) and [Run MATLAB Command](https://github.com/matlab-actions/run-command)
 - [R2025a supported compilers](https://www.mathworks.com/content/dam/mathworks/mathworks-dot-com/support/sysreq/files/system-requirements-release-2025a-supported-compilers.pdf)
 - [R2025a Windows requirements](https://www.mathworks.com/content/dam/mathworks/mathworks-dot-com/support/sysreq/files/system-requirements-release-2025a-windows.pdf)
-- [Windows 2025 runner image](https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md)
+- [Windows 2022 runner image](https://github.com/actions/runner-images/blob/main/images/windows/Windows2022-Readme.md)
 - [GitHub manual dispatch](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch)
 - [Compiler configuration API](https://www.mathworks.com/help/matlab/ref/mex.getcompilerconfigurations.html)
 - [From Workspace behavior](https://www.mathworks.com/help/simulink/slref/fromworkspace.html)

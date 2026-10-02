@@ -81,7 +81,7 @@ jobs:
     if: needs.authorize.result == 'success' && github.run_attempt == 1
     permissions:
       contents: read
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 60
     defaults:
       run:

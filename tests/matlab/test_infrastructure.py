@@ -30,7 +30,7 @@ class PublicSmokeTests(unittest.TestCase):
         self.assertEqual(job['permissions'],{'contents':'read'})
         live=next(s for s in job['steps'] if '--verify-execution' in s.get('run',''))
         self.assertLess(job['steps'].index(live),next(i for i,s in enumerate(job['steps']) if s.get('id')=='setup'))
-        self.assertEqual(job['runs-on'], 'windows-latest')
+        self.assertEqual(job['runs-on'], 'windows-2022')
         self.assertLessEqual(int(job['timeout-minutes']),60)
         checkout=next(s for s in job['steps'] if s.get('uses','').startswith('actions/checkout@'))
         self.assertEqual(checkout['with']['ref'],'${{ needs.authorize.outputs.sha }}')
@@ -54,6 +54,14 @@ class PublicSmokeTests(unittest.TestCase):
         self.assertIn("'reset',double(mod(n,17)==0 & n>0)",source)
         self.assertIn("'rmse'",source)
         self.assertIn("'event_mismatches'",source)
+
+    def test_explicit_windows_2022_retains_vs2022_guard(self):
+        preflight = (ROOT/'ci/matlab/runner_preflight.ps1').read_text()
+        self.assertIn("if ($os.Caption -notmatch 'Windows Server 2022')", preflight)
+        self.assertIn("-version '[17.0,18.0)'", preflight)
+        self.assertIn('Microsoft.VisualStudio.Component.VC.Tools.x86.x64', preflight)
+        self.assertIn("if ($compilers.Count -eq 0) { throw", preflight)
+        self.assertNotIn("-notmatch 'Windows Server 2025'", preflight)
 
     def test_github_context_availability(self):
         # GitHub rejects runner context in job.env before allocating any jobs.
