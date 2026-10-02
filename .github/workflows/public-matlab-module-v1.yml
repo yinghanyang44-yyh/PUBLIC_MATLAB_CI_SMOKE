@@ -1,0 +1,156 @@
+name: PUBLIC_MATLAB_MODULE_V1
+run-name: Public module request • ${{ github.event.issue.number }} • ${{ github.sha }}
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+concurrency:
+  group: >-
+    ${{ github.repository == 'yinghanyang44-yyh/PUBLIC_MATLAB_CI_SMOKE' &&
+        github.event.repository.private == false && github.actor == github.repository_owner &&
+        github.triggering_actor == github.repository_owner && github.run_attempt == 1 &&
+        !github.event.issue.pull_request && startsWith(github.event.comment.body, '/matlab-module run ') &&
+        'public-matlab-module-v1' || format('public-module-rejected-{0}', github.run_id) }}
+  cancel-in-progress: false
+jobs:
+  admit:
+    if: >-
+      github.repository == 'yinghanyang44-yyh/PUBLIC_MATLAB_CI_SMOKE' &&
+      github.event.repository.private == false && github.actor == github.repository_owner &&
+      github.triggering_actor == github.repository_owner && github.run_attempt == 1 &&
+      !github.event.issue.pull_request && startsWith(github.event.comment.body, '/matlab-module run ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out trusted infrastructure at immutable event SHA
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Admit exact owner-approved public task snapshot and claim once
+        timeout-minutes: 4
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MATLAB_MODULE_STAGING_DIR: ${{ runner.temp }}/public-module-admission
+          MATLAB_MODULE_EVIDENCE_DIR: ${{ runner.temp }}/public-module-admission
+        run: python3 -I ci/module_lab/module_gate.py admit
+      - name: Retain admitted source or rejection evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: public-module-admission-${{ github.run_id }}
+          path: ${{ runner.temp }}/public-module-admission/
+          retention-days: 30
+          if-no-files-found: error
+          include-hidden-files: false
+  module-matlab:
+    needs: admit
+    if: needs.admit.result == 'success' && github.run_attempt == 1
+    runs-on: windows-2022
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out only trusted main infrastructure
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Restore audited task-branch source and admission manifest
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: public-module-admission-${{ github.run_id }}
+          path: ${{ runner.temp }}/public-module-admission/
+      - name: Reverify module SHA, live owner approval and source hashes
+        id: identity
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MATLAB_MODULE_STAGING_DIR: ${{ runner.temp }}/public-module-admission
+          MATLAB_MODULE_EVIDENCE_DIR: ${{ runner.temp }}/public-module-evidence
+        run: python -I trusted/ci/module_lab/module_gate.py verify-before
+      - name: Check supported Windows and exact compiler prerequisites
+        id: platform
+        timeout-minutes: 3
+        env:
+          MATLAB_CI_ARTIFACT_DIR: ${{ runner.temp }}/public-module-evidence
+        run: ./trusted/ci/matlab/runner_preflight.ps1 -Stage before-install -MinimumFreeGiB 10 -RequirePlatform
+      - name: Install only MATLAB R2025a and Simulink
+        id: setup
+        timeout-minutes: 30
+        uses: matlab-actions/setup-matlab@f9e43010f1ae678f7cfa0542fe2a4f60f7d1ad8d # v3.1
+        with:
+          release: R2025a
+          products: Simulink
+          cache: false
+      - name: Check compilation headroom
+        timeout-minutes: 2
+        env:
+          MATLAB_CI_ARTIFACT_DIR: ${{ runner.temp }}/public-module-evidence
+        run: ./trusted/ci/matlab/runner_preflight.ps1 -Stage after-install -MinimumFreeGiB 2
+      - name: Recheck unchanged owner approval immediately before native execution
+        id: execution_identity
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MATLAB_MODULE_STAGING_DIR: ${{ runner.temp }}/public-module-admission
+          MATLAB_MODULE_EVIDENCE_DIR: ${{ runner.temp }}/public-module-evidence
+        run: python -I trusted/ci/module_lab/module_gate.py verify-before
+      - name: Build and test the actual candidate core and S-function
+        id: matlab
+        timeout-minutes: 15
+        uses: matlab-actions/run-command@bfa857648f4895aa98a446fe41c85e0788421ed5 # v3.3
+        env:
+          MATLAB_MODULE_SOURCE_DIR: ${{ runner.temp }}/public-module-admission/module
+          MATLAB_MODULE_EVIDENCE_DIR: ${{ runner.temp }}/public-module-evidence
+        with:
+          command: addpath(fullfile(pwd,'trusted','ci','module_lab')); run_module_lab
+          startup-options: -noFigureWindows
+          generate-summary: false
+      - name: Bind successful runtime receipt to unchanged candidate bytes
+        id: receipt
+        if: success() && steps.matlab.outcome == 'success'
+        timeout-minutes: 2
+        env:
+          MATLAB_MODULE_STAGING_DIR: ${{ runner.temp }}/public-module-admission
+          MATLAB_MODULE_EVIDENCE_DIR: ${{ runner.temp }}/public-module-evidence
+        run: python -I trusted/ci/module_lab/module_gate.py verify-after
+      - name: Record final step outcomes and remaining disk space
+        if: always()
+        env:
+          MATLAB_MODULE_EVIDENCE_DIR: ${{ runner.temp }}/public-module-evidence
+          IDENTITY_OUTCOME: ${{ steps.identity.outcome }}
+          EXECUTION_IDENTITY_OUTCOME: ${{ steps.execution_identity.outcome }}
+          PLATFORM_OUTCOME: ${{ steps.platform.outcome }}
+          SETUP_OUTCOME: ${{ steps.setup.outcome }}
+          MATLAB_OUTCOME: ${{ steps.matlab.outcome }}
+          RECEIPT_OUTCOME: ${{ steps.receipt.outcome }}
+        run: |
+          New-Item -ItemType Directory -Force $env:MATLAB_MODULE_EVIDENCE_DIR | Out-Null
+          [ordered]@{
+            identity = $env:IDENTITY_OUTCOME; execution_identity = $env:EXECUTION_IDENTITY_OUTCOME
+            platform = $env:PLATFORM_OUTCOME
+            setup = $env:SETUP_OUTCOME; matlab = $env:MATLAB_OUTCOME; receipt = $env:RECEIPT_OUTCOME
+          } | ConvertTo-Json | Set-Content "$env:MATLAB_MODULE_EVIDENCE_DIR/step-outcomes.json"
+          Get-PSDrive -PSProvider FileSystem | Select-Object Name,Root,Used,Free |
+            ConvertTo-Json -Depth 3 | Set-Content "$env:MATLAB_MODULE_EVIDENCE_DIR/disks-final.json"
+      - name: Retain runtime evidence on success or failure
+        if: always()
+        timeout-minutes: 3
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: public-module-runtime-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/public-module-evidence/
+          retention-days: 30
+          if-no-files-found: error
+          include-hidden-files: false
