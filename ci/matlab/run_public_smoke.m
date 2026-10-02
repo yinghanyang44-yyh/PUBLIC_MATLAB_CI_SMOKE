@@ -84,7 +84,9 @@ try
     mex('-v','-R2018a','-outdir',buildDir,'-output','accumulator_sfun',includeCore, ...
         ['-I' fullfile(matlabroot,'simulink','include')], ...
         fullfile(sourceDir,'wrappers','accumulator_sfun.cpp'),coreSource);
-    metrics = struct([]);
+    metrics = struct('case_name',{},'samples',{},'max_abs_error',{},'rmse',{}, ...
+        'event_mismatches',{},'final_committed_state_error',{},'reset_samples',{}, ...
+        'lower_saturation_samples',{},'upper_saturation_samples',{});
     for c = 1:numel(cases)
         v = cases(c);
         direct = accumulator_mex(v.u,v.reset,[v.lower v.upper v.initial]);
@@ -151,7 +153,9 @@ end
 end
 
 function configureVS2022(artifactDir)
-records = struct([]);
+% Empty arrays must carry the same field schema as indexed assignments.
+records = struct('language',{},'name',{},'short_name',{}, ...
+    'manufacturer',{},'version',{},'location',{},'options_file',{});
 languages = {'C','C++'};
 for i=1:numel(languages)
     lang = languages{i};

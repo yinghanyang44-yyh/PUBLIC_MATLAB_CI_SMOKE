@@ -2,7 +2,7 @@
 
 A newly authored, generic public MATLAB/Simulink smoke example. It contains no imported models, research implementation, private parameters, private test vectors, or other project assets. Models are generated from these public source files at runtime.
 
-**Current validation:** local workflow-policy checks and portable C++ tests pass. A public run reached Windows preflight and stopped before MATLAB installation because the rolling image lacked VS2022. MATLAB, Simulink, MEX and all seven runtime gates remain untested. No MATLAB PASS is claimed.
+**Current validation:** local workflow-policy checks and portable C++ tests pass. [Public run 36965117861](https://github.com/yinghanyang44-yyh/PUBLIC_MATLAB_CI_SMOKE/actions/runs/36965117861) passed Windows 2022 preflight, installed MATLAB R2025a Update 1 (`25.1.0.2973910`) and Simulink 25.1, and passed gates 1–3. Gate 4 failed while recording the selected C compiler because an empty struct array lacked its field schema. This source corrects that schema and the equivalent later metrics initializer. MEX execution and gates 4–7 still need a successful new run; no overall MATLAB PASS is claimed.
 
 The repository `yinghanyang44-yyh/PUBLIC_MATLAB_CI_SMOKE` is verified public with default branch `main`. Its workflows become registered after these source files are published to that branch.
 

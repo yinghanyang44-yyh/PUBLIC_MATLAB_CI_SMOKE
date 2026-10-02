@@ -63,6 +63,25 @@ class PublicSmokeTests(unittest.TestCase):
         self.assertIn("if ($compilers.Count -eq 0) { throw", preflight)
         self.assertNotIn("-notmatch 'Windows Server 2025'", preflight)
 
+    def test_matlab_empty_struct_schemas_match_assignments(self):
+        source = (ROOT/'ci/matlab/run_public_smoke.m').read_text()
+        self.assertNotRegex(source, r'struct\(\s*\[\s*\]\s*\)')
+        patterns = {
+            'records': r'records\(i\) = struct\((.*?)\);',
+            'metrics': r'metric = struct\((.*?)\);',
+            'installedInventory': r'installedInventory\(j\) = struct\((.*?)\);',
+            'manifest': r'manifest\(i\) = struct\((.*?)\);',
+        }
+        for name, assignment_pattern in patterns.items():
+            declaration = re.search(r'\b' + name + r' = struct\((.*?)\);', source, re.S)
+            assignment = re.search(assignment_pattern, source, re.S)
+            self.assertIsNotNone(declaration, name)
+            self.assertIsNotNone(assignment, name)
+            declared_fields = re.findall(r"'([a-z][a-z0-9_]*)'\s*,\s*\{\}", declaration.group(1))
+            assigned_fields = re.findall(r"'([a-z][a-z0-9_]*)'\s*,", assignment.group(1))
+            self.assertTrue(declared_fields, name)
+            self.assertEqual(declared_fields, assigned_fields, name)
+
     def test_github_context_availability(self):
         # GitHub rejects runner context in job.env before allocating any jobs.
         # It is supported in steps.env; YAML parsing alone does not catch this.
