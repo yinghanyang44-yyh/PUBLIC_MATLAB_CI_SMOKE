@@ -1,0 +1,5 @@
+PUBLIC_CI_DISPATCH
+kind=matlab
+id=smoke-20261013-01
+scope=synthetic-matlab-and-simulink-only
+purpose=verify GitHub push to CircleCI automatic R2025a smoke
