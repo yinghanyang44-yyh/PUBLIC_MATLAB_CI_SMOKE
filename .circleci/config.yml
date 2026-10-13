@@ -1,0 +1,85 @@
+# Public-only: manual SHA-gated CI and AI Git-push dispatch on dedicated public branches.
+version: 2.1
+parameters:
+  run_python_smoke:
+    type: boolean
+    default: false
+  run_matlab_smoke:
+    type: boolean
+    default: false
+  expected_commit:
+    type: string
+    default: ""
+orbs:
+  matlab: mathworks/matlab@1
+jobs:
+  public_python_smoke:
+    parameters:
+      intent_gate:
+        type: enum
+        enum: ["ci/circleci/intent_guard.py", "ci/circleci/auto_guard.py"]
+        default: "ci/circleci/intent_guard.py"
+    docker:
+      - image: cimg/python:3.11
+    resource_class: small
+    environment:
+      CI_EXPECTED_COMMIT: << pipeline.parameters.expected_commit >>
+    steps:
+      - checkout
+      - run:
+          name: Check exact reviewed public commit
+          command: "python3 << parameters.intent_gate >>"
+      - run:
+          name: Deterministic Python public smoke
+          command: python3 ci/circleci/python_smoke.py
+      - store_artifacts:
+          path: evidence/circleci
+          destination: public-python-smoke
+
+  public_matlab_simulink_smoke:
+    parameters:
+      intent_gate:
+        type: enum
+        enum: ["ci/circleci/intent_guard.py", "ci/circleci/auto_guard.py"]
+        default: "ci/circleci/intent_guard.py"
+    machine:
+      image: ubuntu-2204:current
+    resource_class: medium
+    environment:
+      CI_EXPECTED_COMMIT: << pipeline.parameters.expected_commit >>
+    steps:
+      - checkout
+      - run:
+          name: Check exact reviewed public commit before MATLAB install
+          command: "python3 << parameters.intent_gate >>"
+      - matlab/install:
+          release: R2025a
+          products: Simulink
+          cache: false
+      - matlab/run-command:
+          command: run("ci/circleci/matlab_smoke.m")
+      - store_artifacts:
+          path: evidence/circleci
+          destination: public-matlab-simulink-smoke
+workflows:
+  python_only_on_explicit_request:
+    when: << pipeline.parameters.run_python_smoke >>
+    jobs:
+      - public_python_smoke
+  matlab_only_on_explicit_request:
+    when: << pipeline.parameters.run_matlab_smoke >>
+    jobs:
+      - public_matlab_simulink_smoke
+
+  ai_python_on_dedicated_branch_push:
+    when: pipeline.event.name == "push" and pipeline.git.branch == "ci/auto-python"
+    jobs:
+      - public_python_smoke:
+          name: ai_public_python_smoke
+          intent_gate: "ci/circleci/auto_guard.py"
+  ai_matlab_on_dedicated_branch_push:
+    when: pipeline.event.name == "push" and pipeline.git.branch == "ci/auto-matlab"
+    jobs:
+      - public_matlab_simulink_smoke:
+          name: ai_public_matlab_smoke
+          intent_gate: "ci/circleci/auto_guard.py"
