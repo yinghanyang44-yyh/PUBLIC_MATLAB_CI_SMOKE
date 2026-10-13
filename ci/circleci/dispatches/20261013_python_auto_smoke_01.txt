@@ -1,0 +1,5 @@
+PUBLIC_CI_DISPATCH
+kind=python
+id=smoke-20261013-01
+scope=generic-only
+purpose=verify GitHub push to CircleCI event trigger
