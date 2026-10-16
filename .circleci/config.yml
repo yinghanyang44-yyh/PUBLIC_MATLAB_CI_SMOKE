@@ -30,8 +30,18 @@ jobs:
           name: Check exact reviewed public commit
           command: "python3 << parameters.intent_gate >>"
       - run:
-          name: Deterministic Python public smoke
-          command: python3 ci/circleci/python_smoke.py
+          name: Existing public authorization and portable C++ tests
+          command: |
+            set -euo pipefail
+            mkdir -p evidence/circleci
+            command -v g++
+            python3 --version | tee evidence/circleci/python-version.txt
+            g++ --version | tee evidence/circleci/compiler-version.txt
+            python3 tests/matlab/test_authorization.py 2>&1 | tee evidence/circleci/authorization-tests.txt
+            build_dir="$(mktemp -d)"
+            trap 'rm -rf "$build_dir"' EXIT
+            g++ -std=c++11 -Wall -Wextra -Werror -pedantic -I ci/matlab/core ci/matlab/core/accumulator.cpp tests/matlab/core_test.cpp -o "$build_dir/core_test" 2>&1 | tee evidence/circleci/core-build.txt
+            "$build_dir/core_test" 2>&1 | tee evidence/circleci/core-tests.txt
       - store_artifacts:
           path: evidence/circleci
           destination: public-python-smoke
